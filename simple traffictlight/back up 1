@@ -1,0 +1,242 @@
+
+#include "main.h"
+
+#define LAMA_S1 3
+#define LAMA_S2 2
+#define LAMA_S3	7
+#define LAMA_S4	1
+
+#define merahON HAL_GPIO_WritePin(GPIOE, merah_Pin, GPIO_PIN_SET);
+#define merahOFF HAL_GPIO_WritePin(GPIOE, merah_Pin, GPIO_PIN_RESET);
+#define kuningON HAL_GPIO_WritePin(GPIOE, kuning_Pin, GPIO_PIN_SET);
+#define kuningOFF HAL_GPIO_WritePin(GPIOE, kuning_Pin, GPIO_PIN_RESET);
+#define hijauON HAL_GPIO_WritePin(GPIOE, hijau_Pin, GPIO_PIN_SET);
+#define hijauOFF HAL_GPIO_WritePin(GPIOE, hijau_Pin, GPIO_PIN_RESET);
+
+int time_in_state = 0;
+int rst=0;
+enum state{s1, s2, s3, s4} stateku;
+TIM_HandleTypeDef htim2;
+
+
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+void SCH_Init(uint32_t);
+void taskRun(void);
+uint8_t resetDetect(void);
+int main(void)
+{
+  HAL_Init();
+  SystemClock_Config();
+  MX_GPIO_Init();
+  SCH_Init(1000);
+  HAL_TIM_Base_Start_IT(&htim2);
+  while (1)
+  {
+	  if(resetDetect()){
+		merahON;
+		kuningOFF;
+		hijauOFF;
+		stateku = s1;
+		taskRun();
+
+	  }
+  }
+}
+
+void SystemClock_Config(void)
+{
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+  __HAL_RCC_PWR_CLK_ENABLE();
+  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+
+void SCH_Init(uint32_t periode)
+{
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 16000-1;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = periode - 1;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+}
+
+
+static void MX_GPIO_Init(void)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+
+  __HAL_RCC_GPIOH_CLK_ENABLE();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOE_CLK_ENABLE();
+
+  HAL_GPIO_WritePin(GPIOE, merah_Pin|kuning_Pin|hijau_Pin, GPIO_PIN_SET);
+
+  GPIO_InitStruct.Pin = reset_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(reset_GPIO_Port, &GPIO_InitStruct);
+
+  GPIO_InitStruct.Pin = merah_Pin|kuning_Pin|hijau_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+
+}
+
+void taskRun(void){
+	switch (stateku) {
+		case s1:
+			merahON;
+			kuningOFF;
+			hijauOFF;
+			if (++time_in_state==LAMA_S1) {
+				stateku=s2;
+				time_in_state=0;
+			}
+			if(rst){
+				stateku=s1;
+				time_in_state=0;
+				rst=0;
+			}
+			break;
+		case s2:
+			merahON;
+			kuningON;
+			hijauOFF;
+			HAL_GPIO_WritePin(GPIOE, kuning_Pin, GPIO_PIN_SET);
+			HAL_GPIO_WritePin(GPIOE, hijau_Pin, GPIO_PIN_RESET);
+			if (++time_in_state==LAMA_S2) {
+				stateku=s3;
+				time_in_state=0;
+			}
+			if(rst){
+				stateku=s1;
+				time_in_state=0;
+				rst=0;
+			}
+			break;
+		case s3:
+			merahOFF;
+			kuningOFF;
+			hijauON;
+			if (++time_in_state==LAMA_S3) {
+				stateku=s4;
+				time_in_state=0;
+			}
+			if(rst){
+				stateku=s1;
+				time_in_state=0;
+				rst=0;
+			}
+			break;
+		case s4:
+			merahOFF;
+			kuningON;
+			hijauOFF;
+			if (++time_in_state==LAMA_S4) {
+				stateku=s1;
+				time_in_state=0;
+			}
+			if(rst){
+			stateku=s1;
+			time_in_state=0;
+			rst=0;
+			}
+			break;
+		default:
+			break;
+	}
+}
+uint8_t resetDetect(void){
+int flag=0;
+  if(HAL_GPIO_ReadPin(reset_GPIO_Port,reset_Pin)==GPIO_PIN_SET) {
+	  HAL_Delay(20);
+	if(HAL_GPIO_ReadPin(reset_GPIO_Port,reset_Pin)) {
+		while(HAL_GPIO_ReadPin(reset_GPIO_Port,reset_Pin));
+		flag=1;
+		}
+	}
+  return flag;
+}
+void Error_Handler(void)
+{
+
+}
+
+#ifdef  USE_FULL_ASSERT
+
+void assert_failed(uint8_t *file, uint32_t line)
+{
+
+}
+#endif
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
